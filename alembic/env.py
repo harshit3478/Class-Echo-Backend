@@ -16,6 +16,8 @@ if config.config_file_name is not None:
 
 # Override sqlalchemy.url from env (sync driver for migrations)
 db_url = os.environ.get("DATABASE_URL", "")
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
 # asyncpg -> psycopg2 for alembic sync migrations
 sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
 config.set_main_option("sqlalchemy.url", sync_url)
