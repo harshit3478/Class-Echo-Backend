@@ -10,6 +10,7 @@ celery_app = Celery(
 
 celery_app.conf.update(
     worker_concurrency=2,
+    broker_connection_retry_on_startup=True,
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
