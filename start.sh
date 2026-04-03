@@ -1,4 +1,7 @@
 #!/bin/bash
+# Run database migrations
+alembic upgrade head
+
 # Start celery worker in the background
 celery -A celery_worker.celery_app worker --loglevel=info --concurrency=2 &
 # Start uvicorn
