@@ -9,12 +9,38 @@ from app.models.school import School
 from app.models.class_ import Class
 from app.models.subject import Subject
 from app.models.recording import Recording
+from app.models.student import Student
 from app.schemas.school import SchoolOut
 from app.schemas.class_ import ClassOut
 from app.schemas.subject import SubjectOut
 from app.schemas.recording import RecordingWithReport
+from app.schemas.student import StudentProfileOut
 
 router = APIRouter()
+
+
+@router.get("/me", response_model=StudentProfileOut)
+async def get_my_profile(
+    db: AsyncSession = Depends(get_db),
+    student=Depends(get_student),
+):
+    result = await db.execute(
+        select(Student)
+        .options(selectinload(Student.school), selectinload(Student.class_))
+        .where(Student.id == student.id)
+    )
+    s = result.scalar_one()
+    return StudentProfileOut(
+        id=s.id,
+        name=s.name,
+        email=s.email,
+        mobile_number=s.mobile_number,
+        school_id=s.school_id,
+        school_name=s.school.name,
+        class_id=s.class_id,
+        class_name=s.class_.name,
+        created_at=s.created_at,
+    )
 
 
 @router.get("/schools", response_model=list[SchoolOut])
