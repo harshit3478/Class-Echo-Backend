@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -23,11 +24,11 @@ ROLE_MODELS = [
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     for role, Model in ROLE_MODELS:
-        result = await db.execute(select(Model).where(Model.email == body.email))
+        result = await db.execute(select(Model).where(Model.email == form_data.username))
         user = result.scalar_one_or_none()
-        if user and verify_password(body.password, user.hashed_password):
+        if user and verify_password(form_data.password, user.hashed_password):
             token_data = {"sub": str(user.id), "role": role}
             if role == "school_admin":
                 token_data["school_id"] = user.school_id
