@@ -9,6 +9,7 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
+    worker_concurrency=2,
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
