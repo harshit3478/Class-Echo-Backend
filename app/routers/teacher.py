@@ -165,12 +165,16 @@ async def upload_recording(
     )
     db.add(recording)
     await db.commit()
-    await db.refresh(recording)
 
     # Enqueue async LLM processing
     process_recording.delay(recording.id, recording.cloudinary_url)
 
-    return recording
+    result = await db.execute(
+        select(Recording)
+        .options(selectinload(Recording.report))
+        .where(Recording.id == recording.id)
+    )
+    return result.scalar_one()
 
 
 @router.get("/recordings/{recording_id}/report", response_model=LLMReportOut)

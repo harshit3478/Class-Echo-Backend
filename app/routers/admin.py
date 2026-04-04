@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
@@ -12,6 +12,7 @@ from app.models.class_ import Class
 from app.models.subject import Subject
 from app.models.student import Student
 from app.models.recording import Recording
+from app.models.llm_report import LLMReport
 from app.schemas.school import SchoolCreate, SchoolUpdate, SchoolOut
 from app.schemas.class_ import ClassOut
 from app.schemas.subject import SubjectOut
@@ -115,6 +116,29 @@ async def delete_school(
     school = result.scalar_one_or_none()
     if not school:
         raise HTTPException(status_code=404, detail="School not found")
+
+    class_ids = select(Class.id).where(Class.school_id == school_id)
+    subject_ids = select(Subject.id).where(Subject.class_id.in_(class_ids))
+    recording_ids = select(Recording.id).where(Recording.subject_id.in_(subject_ids))
+
+    await db.execute(
+        delete(LLMReport).where(LLMReport.recording_id.in_(recording_ids))
+    )
+    await db.execute(
+        delete(Recording).where(Recording.id.in_(recording_ids))
+    )
+    await db.execute(
+        delete(Subject).where(Subject.id.in_(subject_ids))
+    )
+    await db.execute(
+        delete(Student).where(Student.school_id == school_id)
+    )
+    await db.execute(
+        delete(Class).where(Class.school_id == school_id)
+    )
+    await db.execute(
+        delete(SchoolAdmin).where(SchoolAdmin.school_id == school_id)
+    )
     await db.delete(school)
     await db.commit()
 

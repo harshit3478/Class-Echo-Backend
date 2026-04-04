@@ -83,8 +83,12 @@ async def upload_school_logo(
         raise HTTPException(status_code=404, detail="School not found")
     school.logo_url = result["url"]
     await db.commit()
-    await db.refresh(school)
-    return school
+    result = await db.execute(
+        select(School)
+        .options(selectinload(School.admin))
+        .where(School.id == school.id)
+    )
+    return result.scalar_one()
 
 # ─── Teacher management ───────────────────────────────────────────────────────
 
