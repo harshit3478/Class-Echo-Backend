@@ -9,8 +9,14 @@ from app.core.security import hash_password
 from app.models.school import School
 from app.models.school_admin import SchoolAdmin
 from app.models.class_ import Class
+from app.models.subject import Subject
+from app.models.student import Student
+from app.models.recording import Recording
 from app.schemas.school import SchoolCreate, SchoolUpdate, SchoolOut
 from app.schemas.class_ import ClassOut
+from app.schemas.subject import SubjectOut
+from app.schemas.student import StudentOut
+from app.schemas.recording import RecordingWithReport
 
 router = APIRouter()
 
@@ -123,3 +129,86 @@ async def list_school_classes(
         select(Class).where(Class.school_id == school_id).order_by(Class.name)
     )
     return result.scalars().all()
+
+
+@router.get("/schools/{school_id}/classes/{class_id}", response_model=ClassOut)
+async def get_school_class(
+    school_id: int,
+    class_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_admin),
+):
+    class_ = await _get_school_class(class_id, school_id, db)
+    return class_
+
+
+@router.get("/schools/{school_id}/classes/{class_id}/subjects", response_model=list[SubjectOut])
+async def list_school_class_subjects(
+    school_id: int,
+    class_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_admin),
+):
+    await _get_school_class(class_id, school_id, db)
+    result = await db.execute(
+        select(Subject)
+        .options(selectinload(Subject.teacher))
+        .where(Subject.class_id == class_id)
+        .order_by(Subject.name)
+    )
+    return result.scalars().all()
+
+
+@router.get("/schools/{school_id}/subjects/{subject_id}/students", response_model=list[StudentOut])
+async def list_school_subject_students(
+    school_id: int,
+    subject_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_admin),
+):
+    subject = await _get_school_subject(subject_id, school_id, db)
+    result = await db.execute(
+        select(Student)
+        .where(Student.class_id == subject.class_id)
+        .order_by(Student.name)
+    )
+    return result.scalars().all()
+
+
+@router.get("/schools/{school_id}/subjects/{subject_id}/recordings", response_model=list[RecordingWithReport])
+async def list_school_subject_recordings(
+    school_id: int,
+    subject_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_admin),
+):
+    await _get_school_subject(subject_id, school_id, db)
+    result = await db.execute(
+        select(Recording)
+        .options(selectinload(Recording.report))
+        .where(Recording.subject_id == subject_id)
+        .order_by(Recording.uploaded_at.desc())
+    )
+    return result.scalars().all()
+
+
+async def _get_school_class(class_id: int, school_id: int, db: AsyncSession) -> Class:
+    result = await db.execute(
+        select(Class).where(Class.id == class_id, Class.school_id == school_id)
+    )
+    class_ = result.scalar_one_or_none()
+    if not class_:
+        raise HTTPException(status_code=404, detail="Class not found")
+    return class_
+
+
+async def _get_school_subject(subject_id: int, school_id: int, db: AsyncSession) -> Subject:
+    result = await db.execute(
+        select(Subject)
+        .join(Class, Subject.class_id == Class.id)
+        .where(Subject.id == subject_id, Class.school_id == school_id)
+    )
+    subject = result.scalar_one_or_none()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    return subject

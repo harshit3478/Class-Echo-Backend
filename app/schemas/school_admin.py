@@ -19,3 +19,5 @@ class SchoolAdminProfileOut(BaseModel):
 
 class SchoolAdminUpdate(BaseModel):
     name: str | None = None
+    school_name: str | None = None
+    school_address: str | None = None

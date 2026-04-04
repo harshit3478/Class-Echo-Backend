@@ -41,8 +41,18 @@ async def update_my_profile(
     db: AsyncSession = Depends(get_db),
     school_admin=Depends(get_school_admin),
 ):
-    for field, value in body.model_dump(exclude_none=True).items():
-        setattr(school_admin, field, value)
+    payload = body.model_dump(exclude_none=True)
+    school = await db.get(School, school_admin.school_id)
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+
+    if "name" in payload:
+        school_admin.name = payload["name"]
+    if "school_name" in payload:
+        school.name = payload["school_name"]
+    if "school_address" in payload:
+        school.address = payload["school_address"]
+
     await db.commit()
     admin = await _get_school_admin_with_school(school_admin.id, db)
     return _build_school_admin_profile(admin)

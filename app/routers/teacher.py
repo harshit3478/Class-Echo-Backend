@@ -18,13 +18,24 @@ from app.tasks.llm_tasks import process_recording
 router = APIRouter()
 
 ALLOWED_AUDIO_TYPES = {
-    "audio/mpeg", "audio/mp3", "audio/wav", "audio/ogg",
-    "audio/x-m4a", "audio/mp4", "audio/webm", "video/mp4", "video/webm",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/ogg",
+    "audio/x-m4a",
+    "audio/mp4",
+    "audio/webm",
+    "audio/aac",
 }
 
 EXT_TO_MIME = {
-    "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4",
-    "ogg": "audio/ogg", "webm": "audio/webm", "mp4": "audio/mp4",
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "m4a": "audio/mp4",
+    "ogg": "audio/ogg",
+    "webm": "audio/webm",
+    "aac": "audio/aac",
 }
 
 
