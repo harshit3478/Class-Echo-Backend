@@ -41,7 +41,7 @@ async def update_my_profile(
     db: AsyncSession = Depends(get_db),
     school_admin=Depends(get_school_admin),
 ):
-    payload = body.model_dump(exclude_none=True)
+    payload = body.model_dump(exclude_unset=True)
     school = await db.get(School, school_admin.school_id)
     if not school:
         raise HTTPException(status_code=404, detail="School not found")

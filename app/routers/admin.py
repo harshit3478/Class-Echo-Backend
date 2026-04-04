@@ -94,7 +94,7 @@ async def update_school(
     if not school:
         raise HTTPException(status_code=404, detail="School not found")
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    for field, value in body.model_dump(exclude_unset=True).items():
         setattr(school, field, value)
     await db.commit()
     await db.refresh(school)

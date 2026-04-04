@@ -39,7 +39,7 @@ async def update_my_profile(
     db: AsyncSession = Depends(get_db),
     student=Depends(get_student),
 ):
-    for field, value in body.model_dump(exclude_none=True).items():
+    for field, value in body.model_dump(exclude_unset=True).items():
         setattr(student, field, value)
     await db.commit()
     return await get_my_profile(db=db, student=student)
