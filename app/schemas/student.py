@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class StudentOut(BaseModel):
@@ -23,6 +23,19 @@ class StudentProfileOut(BaseModel):
     mobile_number: str | None
     school_id: int
     school_name: str
+    class_id: int
+    class_name: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StudentWithClassOut(BaseModel):
+    """Student with class name — used by school admin roster."""
+    id: int
+    name: str
+    email: str
+    mobile_number: str | None
     class_id: int
     class_name: str
     created_at: datetime

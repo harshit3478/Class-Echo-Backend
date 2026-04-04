@@ -8,12 +8,14 @@ from app.core.deps import get_school_admin
 from app.models.class_ import Class
 from app.models.subject import Subject
 from app.models.teacher import Teacher
+from app.models.student import Student
 from app.models.recording import Recording
 from app.models.llm_report import LLMReport
 from app.schemas.class_ import ClassCreate, ClassUpdate, ClassOut
 from app.schemas.subject import SubjectCreate, SubjectUpdate, SubjectOut, AssignTeacherRequest
 from app.schemas.teacher import TeacherCreate, TeacherOut
 from app.schemas.recording import RecordingWithReport, LLMReportOut
+from app.schemas.student import StudentWithClassOut
 from app.core.security import hash_password
 
 router = APIRouter()
@@ -199,6 +201,34 @@ async def assign_teacher(
         select(Subject).options(selectinload(Subject.teacher)).where(Subject.id == subject.id)
     )
     return result.scalar_one()
+
+
+# ─── Students ────────────────────────────────────────────────────────────────
+
+@router.get("/students", response_model=list[StudentWithClassOut])
+async def list_students(
+    db: AsyncSession = Depends(get_db),
+    school_admin=Depends(get_school_admin),
+):
+    result = await db.execute(
+        select(Student)
+        .options(selectinload(Student.class_))
+        .where(Student.school_id == school_admin.school_id)
+        .order_by(Student.name)
+    )
+    students = result.scalars().all()
+    return [
+        StudentWithClassOut(
+            id=s.id,
+            name=s.name,
+            email=s.email,
+            mobile_number=s.mobile_number,
+            class_id=s.class_id,
+            class_name=s.class_.name,
+            created_at=s.created_at,
+        )
+        for s in students
+    ]
 
 
 # ─── Recordings & Reports (view) ──────────────────────────────────────────────

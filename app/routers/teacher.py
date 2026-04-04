@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -10,6 +10,7 @@ from app.models.recording import Recording
 from app.models.student import Student
 from app.schemas.subject import SubjectOut
 from app.schemas.recording import RecordingWithReport, LLMReportOut
+from app.schemas.teacher import TeacherOut
 from app.services.cloudinary_service import upload_audio
 from app.tasks.llm_tasks import process_recording
 
@@ -17,8 +18,27 @@ router = APIRouter()
 
 ALLOWED_AUDIO_TYPES = {
     "audio/mpeg", "audio/mp3", "audio/wav", "audio/ogg",
-    "audio/x-m4a", "audio/mp4", "audio/webm",
+    "audio/x-m4a", "audio/mp4", "audio/webm", "video/mp4", "video/webm",
 }
+
+EXT_TO_MIME = {
+    "mp3": "audio/mpeg", "wav": "audio/wav", "m4a": "audio/mp4",
+    "ogg": "audio/ogg", "webm": "audio/webm", "mp4": "audio/mp4",
+}
+
+
+def _resolve_mime(file: UploadFile) -> str:
+    """Return MIME type, falling back to extension if content_type is unreliable."""
+    ct = (file.content_type or "").split(";")[0].strip().lower()
+    if ct in ALLOWED_AUDIO_TYPES:
+        return ct
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    return EXT_TO_MIME.get(ext, ct)
+
+
+@router.get("/me", response_model=TeacherOut)
+async def get_my_profile(teacher=Depends(get_teacher)):
+    return teacher
 
 
 @router.get("/subjects", response_model=list[SubjectOut])
@@ -65,12 +85,15 @@ async def list_recordings(
 async def upload_recording(
     subject_id: int,
     file: UploadFile = File(...),
+    chapter_name: str | None = Form(None),
+    description: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     teacher=Depends(get_teacher),
 ):
     await _get_teacher_subject(subject_id, teacher.id, db)
 
-    if file.content_type not in ALLOWED_AUDIO_TYPES:
+    mime = _resolve_mime(file)
+    if mime not in ALLOWED_AUDIO_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type '{file.content_type}'. Upload an audio file.",
@@ -81,6 +104,8 @@ async def upload_recording(
     recording = Recording(
         subject_id=subject_id,
         teacher_id=teacher.id,
+        chapter_name=chapter_name or None,
+        description=description or None,
         cloudinary_url=upload_result["url"],
         cloudinary_public_id=upload_result["public_id"],
         duration_seconds=upload_result.get("duration"),

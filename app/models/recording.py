@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Float, Enum, func
+from sqlalchemy import String, Text, DateTime, ForeignKey, Float, Enum, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -18,6 +18,8 @@ class Recording(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"))
     teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id"))
+    chapter_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     cloudinary_url: Mapped[str] = mapped_column(String(500))
     cloudinary_public_id: Mapped[str] = mapped_column(String(255))
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -7,6 +7,8 @@ class RecordingOut(BaseModel):
     id: int
     subject_id: int
     teacher_id: int
+    chapter_name: str | None
+    description: str | None
     cloudinary_url: str
     duration_seconds: float | None
     status: RecordingStatus
