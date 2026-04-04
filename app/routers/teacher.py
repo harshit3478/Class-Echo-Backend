@@ -10,8 +10,9 @@ from app.models.recording import Recording
 from app.models.student import Student
 from app.schemas.subject import SubjectOut
 from app.schemas.recording import RecordingWithReport, LLMReportOut
-from app.schemas.teacher import TeacherOut
-from app.services.cloudinary_service import upload_audio
+from app.schemas.student import StudentOut
+from app.schemas.teacher import TeacherOut, TeacherUpdate
+from app.services.cloudinary_service import upload_audio, upload_image
 from app.tasks.llm_tasks import process_recording
 
 router = APIRouter()
@@ -39,6 +40,47 @@ def _resolve_mime(file: UploadFile) -> str:
 @router.get("/me", response_model=TeacherOut)
 async def get_my_profile(teacher=Depends(get_teacher)):
     return teacher
+
+
+@router.put("/me", response_model=TeacherOut)
+async def update_my_profile(
+    body: TeacherUpdate,
+    db: AsyncSession = Depends(get_db),
+    teacher=Depends(get_teacher),
+):
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(teacher, field, value)
+    await db.commit()
+    await db.refresh(teacher)
+    return teacher
+
+
+@router.post("/profile-image", response_model=TeacherOut)
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    teacher=Depends(get_teacher),
+):
+    result = await upload_image(file, folder=f"classecho/teachers/{teacher.id}")
+    teacher.profile_image_url = result["url"]
+    await db.commit()
+    await db.refresh(teacher)
+    return teacher
+
+
+@router.get("/subjects/{subject_id}/students", response_model=list[StudentOut])
+async def list_subject_students(
+    subject_id: int,
+    db: AsyncSession = Depends(get_db),
+    teacher=Depends(get_teacher),
+):
+    subject = await _get_teacher_subject(subject_id, teacher.id, db)
+    result = await db.execute(
+        select(Student)
+        .where(Student.class_id == subject.class_id)
+        .order_by(Student.name)
+    )
+    return result.scalars().all()
 
 
 @router.get("/subjects", response_model=list[SubjectOut])

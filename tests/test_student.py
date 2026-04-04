@@ -9,6 +9,8 @@ What these tests cover:
 - Students cannot access teacher or admin endpoints
 - Role guard: only 'student' role
 """
+import app.routers.student as student_router
+
 from app.models.recording import Recording, RecordingStatus
 
 
@@ -199,3 +201,37 @@ async def test_list_recordings_subject_from_other_school(
         headers={"Authorization": student_token},
     )
     assert resp.status_code == 404
+
+
+async def test_get_my_profile(client, student_token, student_user):
+    resp = await client.get("/student/me", headers={"Authorization": student_token})
+    assert resp.status_code == 200
+    assert resp.json()["email"] == student_user.email
+    assert resp.json()["profile_image_url"] is None
+
+
+async def test_update_my_profile(client, student_token):
+    resp = await client.put(
+        "/student/me",
+        json={"name": "Updated Student", "mobile_number": "8888888888"},
+        headers={"Authorization": student_token},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Updated Student"
+    assert data["mobile_number"] == "8888888888"
+
+
+async def test_upload_student_profile_image(client, student_token, monkeypatch):
+    async def fake_upload_image(file, folder):
+        return {"url": "https://example.com/student.png", "public_id": "students/test"}
+
+    monkeypatch.setattr(student_router, "upload_image", fake_upload_image)
+
+    resp = await client.post(
+        "/student/profile-image",
+        headers={"Authorization": student_token},
+        files={"file": ("avatar.png", b"fake-image", "image/png")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["profile_image_url"] == "https://example.com/student.png"

@@ -18,8 +18,11 @@ So by the time the test reads the DB after an upload, the report already exists.
 """
 from sqlalchemy import select
 
+import app.routers.teacher as teacher_router
+
 from app.models.llm_report import LLMReport
 from app.models.recording import Recording, RecordingStatus
+from app.models.student import Student
 from app.models.subject import Subject
 
 
@@ -260,4 +263,76 @@ async def test_cannot_get_other_teachers_report(
         headers={"Authorization": teacher_token},  # teacher A's token
     )
     # Route filters by teacher_id=current_teacher.id, so this recording is not found
+    assert resp.status_code == 404
+
+
+async def test_get_my_profile(client, teacher_token, teacher_user):
+    resp = await client.get("/teacher/me", headers={"Authorization": teacher_token})
+    assert resp.status_code == 200
+    assert resp.json()["email"] == teacher_user.email
+
+
+async def test_update_my_profile(client, teacher_token):
+    resp = await client.put(
+        "/teacher/me",
+        json={"name": "Updated Teacher"},
+        headers={"Authorization": teacher_token},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Updated Teacher"
+
+
+async def test_upload_teacher_profile_image(client, teacher_token, monkeypatch):
+    async def fake_upload_image(file, folder):
+        return {"url": "https://example.com/teacher.png", "public_id": "teachers/test"}
+
+    monkeypatch.setattr(teacher_router, "upload_image", fake_upload_image)
+
+    resp = await client.post(
+        "/teacher/profile-image",
+        headers={"Authorization": teacher_token},
+        files={"file": ("avatar.png", b"fake-image", "image/png")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["profile_image_url"] == "https://example.com/teacher.png"
+
+
+async def test_list_subject_students(client, db_session, teacher_token, subject, school, class_):
+    student_a = Student(
+        name="Beta Student",
+        email="beta@student.com",
+        hashed_password="x",
+        school_id=school.id,
+        class_id=class_.id,
+    )
+    student_b = Student(
+        name="Alpha Student",
+        email="alpha@student.com",
+        hashed_password="x",
+        school_id=school.id,
+        class_id=class_.id,
+    )
+    db_session.add_all([student_a, student_b])
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/teacher/subjects/{subject.id}/students",
+        headers={"Authorization": teacher_token},
+    )
+    assert resp.status_code == 200
+    assert [student["name"] for student in resp.json()] == ["Alpha Student", "Beta Student"]
+
+
+async def test_list_subject_students_for_unowned_subject_returns_404(
+    client, db_session, teacher_token, class_
+):
+    unassigned = Subject(name="History", class_id=class_.id, teacher_id=None)
+    db_session.add(unassigned)
+    await db_session.commit()
+    await db_session.refresh(unassigned)
+
+    resp = await client.get(
+        f"/teacher/subjects/{unassigned.id}/students",
+        headers={"Authorization": teacher_token},
+    )
     assert resp.status_code == 404

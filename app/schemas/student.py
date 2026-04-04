@@ -20,6 +20,7 @@ class StudentProfileOut(BaseModel):
     id: int
     name: str
     email: str
+    profile_image_url: str | None
     mobile_number: str | None
     school_id: int
     school_name: str
@@ -41,3 +42,8 @@ class StudentWithClassOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StudentUpdate(BaseModel):
+    name: str | None = None
+    mobile_number: str | None = None

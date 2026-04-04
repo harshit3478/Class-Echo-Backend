@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -14,7 +14,8 @@ from app.schemas.school import SchoolOut
 from app.schemas.class_ import ClassOut
 from app.schemas.subject import SubjectOut
 from app.schemas.recording import RecordingWithReport
-from app.schemas.student import StudentProfileOut
+from app.schemas.student import StudentProfileOut, StudentUpdate
+from app.services.cloudinary_service import upload_image
 
 router = APIRouter()
 
@@ -29,18 +30,31 @@ async def get_my_profile(
         .options(selectinload(Student.school), selectinload(Student.class_))
         .where(Student.id == student.id)
     )
-    s = result.scalar_one()
-    return StudentProfileOut(
-        id=s.id,
-        name=s.name,
-        email=s.email,
-        mobile_number=s.mobile_number,
-        school_id=s.school_id,
-        school_name=s.school.name,
-        class_id=s.class_id,
-        class_name=s.class_.name,
-        created_at=s.created_at,
-    )
+    return _build_student_profile(result.scalar_one())
+
+
+@router.put("/me", response_model=StudentProfileOut)
+async def update_my_profile(
+    body: StudentUpdate,
+    db: AsyncSession = Depends(get_db),
+    student=Depends(get_student),
+):
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(student, field, value)
+    await db.commit()
+    return await get_my_profile(db=db, student=student)
+
+
+@router.post("/profile-image", response_model=StudentProfileOut)
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    student=Depends(get_student),
+):
+    result = await upload_image(file, folder=f"classecho/students/{student.id}")
+    student.profile_image_url = result["url"]
+    await db.commit()
+    return await get_my_profile(db=db, student=student)
 
 
 @router.get("/schools", response_model=list[SchoolOut])
@@ -112,3 +126,18 @@ async def list_recordings(
         .order_by(Recording.uploaded_at.desc())
     )
     return result.scalars().all()
+
+
+def _build_student_profile(student: Student) -> StudentProfileOut:
+    return StudentProfileOut(
+        id=student.id,
+        name=student.name,
+        email=student.email,
+        profile_image_url=student.profile_image_url,
+        mobile_number=student.mobile_number,
+        school_id=student.school_id,
+        school_name=student.school.name,
+        class_id=student.class_id,
+        class_name=student.class_.name,
+        created_at=student.created_at,
+    )

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -6,19 +6,75 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.core.deps import get_school_admin
 from app.models.class_ import Class
+from app.models.school import School
+from app.models.school_admin import SchoolAdmin
 from app.models.subject import Subject
 from app.models.teacher import Teacher
 from app.models.student import Student
 from app.models.recording import Recording
 from app.models.llm_report import LLMReport
 from app.schemas.class_ import ClassCreate, ClassUpdate, ClassOut
+from app.schemas.school import SchoolOut
+from app.schemas.school_admin import SchoolAdminProfileOut, SchoolAdminUpdate
 from app.schemas.subject import SubjectCreate, SubjectUpdate, SubjectOut, AssignTeacherRequest
 from app.schemas.teacher import TeacherCreate, TeacherOut
 from app.schemas.recording import RecordingWithReport, LLMReportOut
-from app.schemas.student import StudentWithClassOut
+from app.schemas.student import StudentOut, StudentWithClassOut
 from app.core.security import hash_password
+from app.services.cloudinary_service import upload_image
 
 router = APIRouter()
+
+
+@router.get("/me", response_model=SchoolAdminProfileOut)
+async def get_my_profile(
+    db: AsyncSession = Depends(get_db),
+    school_admin=Depends(get_school_admin),
+):
+    admin = await _get_school_admin_with_school(school_admin.id, db)
+    return _build_school_admin_profile(admin)
+
+
+@router.put("/me", response_model=SchoolAdminProfileOut)
+async def update_my_profile(
+    body: SchoolAdminUpdate,
+    db: AsyncSession = Depends(get_db),
+    school_admin=Depends(get_school_admin),
+):
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(school_admin, field, value)
+    await db.commit()
+    admin = await _get_school_admin_with_school(school_admin.id, db)
+    return _build_school_admin_profile(admin)
+
+
+@router.post("/profile-image", response_model=SchoolAdminProfileOut)
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    school_admin=Depends(get_school_admin),
+):
+    result = await upload_image(file, folder=f"classecho/school-admins/{school_admin.id}")
+    school_admin.profile_pic_url = result["url"]
+    await db.commit()
+    admin = await _get_school_admin_with_school(school_admin.id, db)
+    return _build_school_admin_profile(admin)
+
+
+@router.post("/logo", response_model=SchoolOut)
+async def upload_school_logo(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    school_admin=Depends(get_school_admin),
+):
+    result = await upload_image(file, folder=f"classecho/schools/{school_admin.school_id}")
+    school = await db.get(School, school_admin.school_id)
+    if not school:
+        raise HTTPException(status_code=404, detail="School not found")
+    school.logo_url = result["url"]
+    await db.commit()
+    await db.refresh(school)
+    return school
 
 # ─── Teacher management ───────────────────────────────────────────────────────
 
@@ -231,6 +287,21 @@ async def list_students(
     ]
 
 
+@router.get("/subjects/{subject_id}/students", response_model=list[StudentOut])
+async def list_subject_students(
+    subject_id: int,
+    db: AsyncSession = Depends(get_db),
+    school_admin=Depends(get_school_admin),
+):
+    subject = await _get_owned_subject(subject_id, school_admin.school_id, db)
+    result = await db.execute(
+        select(Student)
+        .where(Student.class_id == subject.class_id)
+        .order_by(Student.name)
+    )
+    return result.scalars().all()
+
+
 # ─── Recordings & Reports (view) ──────────────────────────────────────────────
 
 @router.get("/subjects/{subject_id}/recordings", response_model=list[RecordingWithReport])
@@ -285,3 +356,30 @@ async def _get_owned_subject(subject_id: int, school_id: int, db: AsyncSession) 
     if not subject:
         raise HTTPException(status_code=404, detail="Subject not found")
     return subject
+
+
+async def _get_school_admin_with_school(admin_id: int, db: AsyncSession) -> SchoolAdmin:
+    result = await db.execute(
+        select(SchoolAdmin)
+        .options(selectinload(SchoolAdmin.school))
+        .where(SchoolAdmin.id == admin_id)
+    )
+    admin = result.scalar_one_or_none()
+    if not admin:
+        raise HTTPException(status_code=404, detail="School admin not found")
+    return admin
+
+
+def _build_school_admin_profile(admin: SchoolAdmin) -> SchoolAdminProfileOut:
+    school = admin.school
+    return SchoolAdminProfileOut(
+        id=admin.id,
+        name=admin.name,
+        email=admin.email,
+        profile_pic_url=admin.profile_pic_url,
+        school_id=admin.school_id,
+        school_name=school.name,
+        school_logo_url=school.logo_url,
+        school_address=school.address,
+        created_at=admin.created_at,
+    )

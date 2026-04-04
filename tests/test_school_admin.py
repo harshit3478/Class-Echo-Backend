@@ -9,11 +9,14 @@ What these tests cover:
 - Ownership enforcement: cannot touch another school's data
 - Role guard: only 'school_admin' role can access
 """
+import app.routers.school_admin as school_admin_router
+
 from sqlalchemy import select
 
 from app.models.class_ import Class
 from app.models.school import School
 from app.models.school_admin import SchoolAdmin
+from app.models.student import Student
 from app.models.subject import Subject
 
 
@@ -223,6 +226,80 @@ async def test_list_teachers(client, school_admin_token, teacher_user):
     assert resp.status_code == 200
     emails = [t["email"] for t in resp.json()]
     assert teacher_user.email in emails
+
+
+async def test_get_my_profile(client, school_admin_token, school_admin_user, school):
+    resp = await client.get("/school/me", headers={"Authorization": school_admin_token})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["email"] == school_admin_user.email
+    assert data["school_name"] == school.name
+
+
+async def test_update_my_profile(client, school_admin_token):
+    resp = await client.put(
+        "/school/me",
+        json={"name": "Updated School Admin"},
+        headers={"Authorization": school_admin_token},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "Updated School Admin"
+
+
+async def test_upload_school_admin_profile_image(client, school_admin_token, monkeypatch):
+    async def fake_upload_image(file, folder):
+        return {"url": "https://example.com/admin.png", "public_id": "admins/test"}
+
+    monkeypatch.setattr(school_admin_router, "upload_image", fake_upload_image)
+
+    resp = await client.post(
+        "/school/profile-image",
+        headers={"Authorization": school_admin_token},
+        files={"file": ("avatar.png", b"fake-image", "image/png")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["profile_pic_url"] == "https://example.com/admin.png"
+
+
+async def test_upload_school_logo(client, school_admin_token, monkeypatch):
+    async def fake_upload_image(file, folder):
+        return {"url": "https://example.com/logo.png", "public_id": "schools/test"}
+
+    monkeypatch.setattr(school_admin_router, "upload_image", fake_upload_image)
+
+    resp = await client.post(
+        "/school/logo",
+        headers={"Authorization": school_admin_token},
+        files={"file": ("logo.png", b"fake-image", "image/png")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["logo_url"] == "https://example.com/logo.png"
+
+
+async def test_list_subject_students(client, db_session, school_admin_token, school, class_, subject):
+    student_a = Student(
+        name="Beta Student",
+        email="schoolbeta@student.com",
+        hashed_password="x",
+        school_id=school.id,
+        class_id=class_.id,
+    )
+    student_b = Student(
+        name="Alpha Student",
+        email="schoolalpha@student.com",
+        hashed_password="x",
+        school_id=school.id,
+        class_id=class_.id,
+    )
+    db_session.add_all([student_a, student_b])
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/school/subjects/{subject.id}/students",
+        headers={"Authorization": school_admin_token},
+    )
+    assert resp.status_code == 200
+    assert [student["name"] for student in resp.json()] == ["Alpha Student", "Beta Student"]
 
 
 # ── Recordings & Reports (read-only) ─────────────────────────────────────────
