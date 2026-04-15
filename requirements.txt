@@ -21,6 +21,6 @@ email-validator==2.2.0
 librosa
 soundfile
 pydub
-openai-whisper
+faster-whisper
 google-generativeai
 numpy

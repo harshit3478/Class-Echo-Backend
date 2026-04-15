@@ -16,7 +16,7 @@ import tempfile
 import librosa
 import numpy as np
 import soundfile as sf
-import whisper
+from faster_whisper import WhisperModel
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 
@@ -28,13 +28,13 @@ from .config import (
 )
 
 # ── Lazy-load Whisper so the model is downloaded only once ────
-_whisper_model: whisper.Whisper | None = None
+_whisper_model: WhisperModel | None = None
 
 
-def _get_whisper() -> whisper.Whisper:
+def _get_whisper() -> WhisperModel:
     global _whisper_model
     if _whisper_model is None:
-        _whisper_model = whisper.load_model(WHISPER_MODEL_SIZE)
+        _whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device="cpu", compute_type="int8")
     return _whisper_model
 
 
@@ -136,19 +136,18 @@ def transcribe(cleaned_wav: str) -> dict:
     }
     """
     model = _get_whisper()
-    result = model.transcribe(cleaned_wav, language="en", fp16=False)
+    # faster-whisper returns a generator of Segment objects + TranscriptionInfo
+    seg_iter, _ = model.transcribe(cleaned_wav, language="en")
 
-    segments = [
-        {
-            "start": seg["start"],
-            "end":   seg["end"],
-            "text":  seg["text"].strip(),
-        }
-        for seg in result.get("segments", [])
-    ]
+    segments = []
+    texts: list[str] = []
+    for seg in seg_iter:
+        text = seg.text.strip()
+        segments.append({"start": seg.start, "end": seg.end, "text": text})
+        texts.append(text)
 
     return {
-        "full_text": result["text"].strip(),
+        "full_text": " ".join(texts),
         "segments":  segments,
     }
 
