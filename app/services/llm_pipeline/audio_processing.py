@@ -13,9 +13,6 @@ from __future__ import annotations
 import os
 import tempfile
 
-import librosa
-import numpy as np
-import soundfile as sf
 from faster_whisper import WhisperModel
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
@@ -62,28 +59,6 @@ def _trim_silence(audio: AudioSegment) -> AudioSegment:
     return audio[start_ms:end_ms]
 
 
-def _reduce_noise(samples: np.ndarray, sr: int) -> np.ndarray:
-    """
-    Simple spectral-subtraction noise reduction.
-
-    Estimates noise profile from the first 0.5 s of audio and subtracts
-    the mean noise magnitude from every frame.  No external library needed.
-    """
-    # Short-Time Fourier Transform
-    stft = librosa.stft(samples)
-    magnitude, phase = np.abs(stft), np.angle(stft)
-
-    # Estimate noise from the first 0.5 s
-    noise_frames = max(1, int(0.5 * sr / 512))
-    noise_profile = np.mean(magnitude[:, :noise_frames], axis=1, keepdims=True)
-
-    # Subtract and clip to avoid negative magnitudes
-    cleaned = np.maximum(magnitude - noise_profile, 0.0)
-
-    # Reconstruct signal
-    return librosa.istft(cleaned * np.exp(1j * phase))
-
-
 def preprocess(audio_path: str) -> str:
     """
     Clean an audio file and write the result to a temp WAV file.
@@ -94,29 +69,20 @@ def preprocess(audio_path: str) -> str:
     2. Normalise volume
     3. Trim silence
     4. Convert to mono 16 kHz (Whisper's expected format)
-    5. Spectral-subtraction noise reduction via librosa
-    6. Write to a temporary WAV file
+    5. Write to a temporary WAV file
 
     Returns
     -------
     Path to the cleaned WAV file (caller is responsible for deletion).
     """
-    # ── pydub stage ──────────────────────────────────────────
     audio = AudioSegment.from_file(audio_path)
     audio = _normalize_volume(audio)
     audio = _trim_silence(audio)
     audio = audio.set_channels(1).set_frame_rate(SAMPLE_RATE)
 
-    # Export to a temp WAV so librosa can load it
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp_wav = tmp.name
     audio.export(tmp_wav, format="wav")
-
-    # ── librosa / noise-reduction stage ──────────────────────
-    samples, sr = librosa.load(tmp_wav, sr=SAMPLE_RATE, mono=True)
-    cleaned = _reduce_noise(samples, sr)
-
-    sf.write(tmp_wav, cleaned, sr)   # overwrite with denoised audio
     return tmp_wav
 
 
