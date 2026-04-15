@@ -36,3 +36,19 @@ class SubjectOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ClassBrief(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class SubjectWithClassOut(SubjectOut):
+    """SubjectOut extended with class details — used for teacher-facing routes."""
+    class_: ClassBrief | None = None
+
+    class Config:
+        from_attributes = True

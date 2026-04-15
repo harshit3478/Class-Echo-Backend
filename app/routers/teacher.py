@@ -8,7 +8,7 @@ from app.core.deps import get_teacher
 from app.models.subject import Subject
 from app.models.recording import Recording
 from app.models.student import Student
-from app.schemas.subject import SubjectOut
+from app.schemas.subject import SubjectOut, SubjectWithClassOut
 from app.schemas.recording import RecordingWithReport, LLMReportOut
 from app.schemas.student import StudentOut
 from app.schemas.teacher import TeacherOut, TeacherUpdate
@@ -94,21 +94,21 @@ async def list_subject_students(
     return result.scalars().all()
 
 
-@router.get("/subjects", response_model=list[SubjectOut])
+@router.get("/subjects", response_model=list[SubjectWithClassOut])
 async def list_my_subjects(
     db: AsyncSession = Depends(get_db),
     teacher=Depends(get_teacher),
 ):
     result = await db.execute(
         select(Subject)
-        .options(selectinload(Subject.teacher))
+        .options(selectinload(Subject.teacher), selectinload(Subject.class_))
         .where(Subject.teacher_id == teacher.id)
         .order_by(Subject.name)
     )
     return result.scalars().all()
 
 
-@router.get("/subjects/{subject_id}", response_model=SubjectOut)
+@router.get("/subjects/{subject_id}", response_model=SubjectWithClassOut)
 async def get_my_subject(
     subject_id: int,
     db: AsyncSession = Depends(get_db),
@@ -199,7 +199,7 @@ async def get_report(
 async def _get_teacher_subject(subject_id: int, teacher_id: int, db: AsyncSession) -> Subject:
     result = await db.execute(
         select(Subject)
-        .options(selectinload(Subject.teacher))
+        .options(selectinload(Subject.teacher), selectinload(Subject.class_))
         .where(Subject.id == subject_id, Subject.teacher_id == teacher_id)
     )
     subject = result.scalar_one_or_none()

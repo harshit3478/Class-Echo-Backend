@@ -80,9 +80,9 @@ def analyze_recording(cloudinary_url: str) -> dict:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-    # ── Map pipeline output → legacy shape ───────────────────
-    # pipeline total is 0–100; callers expect a 0–10 float
-    overall_score = round(result["total_score"] / 10, 1)
+    # ── Map pipeline output → storage shape ──────────────────
+    # pipeline total is 0–100; store as-is
+    overall_score = round(result["total_score"], 1)
 
     return {
         "overall_score":          overall_score,
