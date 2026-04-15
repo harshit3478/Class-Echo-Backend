@@ -11,7 +11,7 @@ SILENCE_THRESHOLD  = 40       # dBFS  — frames quieter than this are silence
 MIN_SILENCE_LEN_MS = 500      # ms   — minimum silence duration to trim
 
 # ── Whisper ───────────────────────────────────
-WHISPER_MODEL_SIZE = "base"   # tiny | base | small | medium | large
+WHISPER_MODEL_SIZE = "tiny"   # tiny | base | small | medium | large
 
 # ── Pace analysis ─────────────────────────────
 IDEAL_WPM_MIN = 120

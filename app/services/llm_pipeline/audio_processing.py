@@ -31,7 +31,13 @@ _whisper_model: WhisperModel | None = None
 def _get_whisper() -> WhisperModel:
     global _whisper_model
     if _whisper_model is None:
-        _whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device="cpu", compute_type="int8")
+        _whisper_model = WhisperModel(
+            WHISPER_MODEL_SIZE,
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=2,
+            num_workers=1,
+        )
     return _whisper_model
 
 
@@ -103,7 +109,7 @@ def transcribe(cleaned_wav: str) -> dict:
     """
     model = _get_whisper()
     # faster-whisper returns a generator of Segment objects + TranscriptionInfo
-    seg_iter, _ = model.transcribe(cleaned_wav, language="en")
+    seg_iter, _ = model.transcribe(cleaned_wav, language="en", beam_size=1)
 
     segments = []
     texts: list[str] = []
