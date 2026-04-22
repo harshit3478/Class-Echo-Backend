@@ -24,8 +24,8 @@ class LLMReportOut(BaseModel):
     recording_id: int
     overall_score: float | None
     teaching_quality_notes: str | None
-    strengths: str | None
-    improvements: str | None
+    score_breakdown: dict | None
+    quantitative_metrics: dict | None
     created_at: datetime
 
     class Config:

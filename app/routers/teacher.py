@@ -17,6 +17,19 @@ from app.tasks.llm_tasks import process_recording
 
 router = APIRouter()
 
+
+def _teacher_out(teacher) -> TeacherOut:
+    return TeacherOut(
+        id=teacher.id,
+        name=teacher.name,
+        email=teacher.email,
+        profile_image_url=teacher.profile_image_url,
+        school_id=teacher.school_id,
+        school_name=teacher.school.name if teacher.school else None,
+        created_at=teacher.created_at,
+    )
+
+
 ALLOWED_AUDIO_TYPES = {
     "audio/mpeg",
     "audio/mp3",
@@ -50,7 +63,7 @@ def _resolve_mime(file: UploadFile) -> str:
 
 @router.get("/me", response_model=TeacherOut)
 async def get_my_profile(teacher=Depends(get_teacher)):
-    return teacher
+    return _teacher_out(teacher)
 
 
 @router.put("/me", response_model=TeacherOut)
@@ -63,7 +76,7 @@ async def update_my_profile(
         setattr(teacher, field, value)
     await db.commit()
     await db.refresh(teacher)
-    return teacher
+    return _teacher_out(teacher)
 
 
 @router.post("/profile-image", response_model=TeacherOut)
@@ -76,7 +89,7 @@ async def upload_profile_image(
     teacher.profile_image_url = result["url"]
     await db.commit()
     await db.refresh(teacher)
-    return teacher
+    return _teacher_out(teacher)
 
 
 @router.get("/subjects/{subject_id}/students", response_model=list[StudentOut])

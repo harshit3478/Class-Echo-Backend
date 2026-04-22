@@ -14,6 +14,8 @@ class TeacherOut(BaseModel):
     name: str
     email: str
     profile_image_url: str | None
+    school_id: int | None
+    school_name: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    # Default 90 days (set ACCESS_TOKEN_EXPIRE_MINUTES in env to override).
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 129_600
 
     CLOUDINARY_URL: str | None = None
     CLOUDINARY_CLOUD_NAME: str | None = None

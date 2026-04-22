@@ -36,6 +36,7 @@ class StudentWithClassOut(BaseModel):
     id: int
     name: str
     email: str
+    profile_image_url: str | None
     mobile_number: str | None
     class_id: int
     class_name: str

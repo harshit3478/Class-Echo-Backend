@@ -18,8 +18,4 @@ pytest-asyncio==0.24.0
 greenlet==3.1.1
 psycopg2-binary==2.9.10
 email-validator==2.2.0
-librosa
-pydub
-faster-whisper
-google-generativeai
-numpy
+google-genai>=1.0.0

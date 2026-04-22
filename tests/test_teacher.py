@@ -115,8 +115,7 @@ async def test_upload_recording(client, teacher_token, subject, audio_bytes):
 async def test_upload_creates_llm_report(client, db_session, teacher_token, subject, audio_bytes):
     """
     After upload, the Celery task (eager) runs and creates an LLMReport.
-    Querying the DB directly should show the report with the mock score.
-    Also, the Recording status should be updated to 'completed' by the task.
+    Requires GEMINI_API_KEY and a working Gemini/Cloudinary path.
     """
     resp = await client.post(
         f"/teacher/subjects/{subject.id}/recordings",
@@ -132,8 +131,8 @@ async def test_upload_creates_llm_report(client, db_session, teacher_token, subj
     )
     report = result.scalar_one_or_none()
     assert report is not None
-    assert report.overall_score == 7.5  # from the mock LLM stub
-    assert report.strengths is not None
+    assert report.overall_score is not None
+    assert report.quantitative_metrics is not None
 
     # Recording status should be 'completed'
     result2 = await db_session.execute(
@@ -215,8 +214,8 @@ async def test_get_report_success(client, db_session, teacher_token, subject, te
         recording_id=recording.id,
         overall_score=8.0,
         teaching_quality_notes="Great class",
-        strengths="Clear explanation",
-        improvements="More examples needed",
+        score_breakdown={},
+        quantitative_metrics={"top_strengths": ["Clear explanation"]},
         raw_llm_response={"model": "stub"},
     )
     db_session.add(report)
@@ -230,7 +229,8 @@ async def test_get_report_success(client, db_session, teacher_token, subject, te
     assert resp.status_code == 200
     data = resp.json()
     assert data["overall_score"] == 8.0
-    assert data["strengths"] == "Clear explanation"
+    assert data["teaching_quality_notes"] == "Great class"
+    assert data["quantitative_metrics"]["top_strengths"] == ["Clear explanation"]
 
 
 async def test_cannot_get_other_teachers_report(

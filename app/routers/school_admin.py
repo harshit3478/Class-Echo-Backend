@@ -95,17 +95,34 @@ async def upload_school_logo(
 @router.get("/teachers", response_model=list[TeacherOut])
 async def list_teachers(
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_school_admin),
+    school_admin=Depends(get_school_admin),
 ):
-    result = await db.execute(select(Teacher).order_by(Teacher.name))
-    return result.scalars().all()
+    result = await db.execute(
+        select(Teacher)
+        .options(selectinload(Teacher.school))
+        .where(Teacher.school_id == school_admin.school_id)
+        .order_by(Teacher.name)
+    )
+    teachers = result.scalars().all()
+    return [
+        TeacherOut(
+            id=t.id,
+            name=t.name,
+            email=t.email,
+            profile_image_url=t.profile_image_url,
+            school_id=t.school_id,
+            school_name=t.school.name if t.school else None,
+            created_at=t.created_at,
+        )
+        for t in teachers
+    ]
 
 
 @router.post("/teachers", response_model=TeacherOut, status_code=201)
 async def create_teacher(
     body: TeacherCreate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_school_admin),
+    school_admin=Depends(get_school_admin),
 ):
     from app.models.admin import Admin
     from app.models.school_admin import SchoolAdmin
@@ -120,11 +137,24 @@ async def create_teacher(
         email=body.email,
         hashed_password=hash_password(body.password),
         profile_image_url=body.profile_image_url,
+        school_id=school_admin.school_id,
     )
     db.add(teacher)
     await db.commit()
-    await db.refresh(teacher)
-    return teacher
+
+    result = await db.execute(
+        select(Teacher).options(selectinload(Teacher.school)).where(Teacher.id == teacher.id)
+    )
+    t = result.scalar_one()
+    return TeacherOut(
+        id=t.id,
+        name=t.name,
+        email=t.email,
+        profile_image_url=t.profile_image_url,
+        school_id=t.school_id,
+        school_name=t.school.name if t.school else None,
+        created_at=t.created_at,
+    )
 
 
 # ─── Classes ──────────────────────────────────────────────────────────────────
@@ -261,7 +291,7 @@ async def assign_teacher(
     subject = await _get_owned_subject(subject_id, school_admin.school_id, db)
 
     teacher = await db.get(Teacher, body.teacher_id)
-    if not teacher:
+    if not teacher or teacher.school_id != school_admin.school_id:
         raise HTTPException(status_code=404, detail="Teacher not found")
 
     subject.teacher_id = body.teacher_id
@@ -292,6 +322,7 @@ async def list_students(
             id=s.id,
             name=s.name,
             email=s.email,
+            profile_image_url=s.profile_image_url,
             mobile_number=s.mobile_number,
             class_id=s.class_id,
             class_name=s.class_.name,

@@ -216,6 +216,21 @@ async def list_school_subject_recordings(
     return result.scalars().all()
 
 
+@router.delete("/recordings/{recording_id}", status_code=204)
+async def delete_recording(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_admin),
+):
+    result = await db.execute(select(Recording).where(Recording.id == recording_id))
+    recording = result.scalar_one_or_none()
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    await db.execute(delete(LLMReport).where(LLMReport.recording_id == recording_id))
+    await db.delete(recording)
+    await db.commit()
+
+
 async def _get_school_class(class_id: int, school_id: int, db: AsyncSession) -> Class:
     result = await db.execute(
         select(Class).where(Class.id == class_id, Class.school_id == school_id)

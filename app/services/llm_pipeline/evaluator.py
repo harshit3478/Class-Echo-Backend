@@ -1,162 +1,135 @@
-# ─────────────────────────────────────────────────────────────
-#  evaluator.py  –  single Gemini call → scores + feedback
-#
-#  Input : transcript dict + features dict
-#  Output: {
-#              "scores":                 { clarity, delivery, … },
-#              "total":                  int,
-#              "issues":                 [str, …],
-#              "suggestions":            [str, …],
-#              "teaching_quality_notes": str,
-#          }
-# ─────────────────────────────────────────────────────────────
-
 from __future__ import annotations
 
 import json
 import os
 import re
+import time
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
-from .config import (
-    EVALUATION_PROMPT_TEMPLATE,
-    GEMINI_MODEL,
-    IDEAL_WPM_MAX,
-    IDEAL_WPM_MIN,
-    SCORE_WEIGHTS,
-)
+from .config import EVALUATION_PROMPT_TEMPLATE, GEMINI_MODEL, SCORE_WEIGHTS
 
-# ── Initialise Gemini (reads GEMINI_API_KEY from environment) ─
-_client_initialised = False
+_client: genai.Client | None = None
+
+_MIME_MAP = {
+    ".mp3":  "audio/mpeg",
+    ".mp4":  "audio/mp4",
+    ".m4a":  "audio/mp4",
+    ".wav":  "audio/wav",
+    ".ogg":  "audio/ogg",
+    ".webm": "audio/webm",
+    ".aac":  "audio/aac",
+    ".flac": "audio/flac",
+}
 
 
-def _ensure_client() -> None:
-    global _client_initialised
-    if not _client_initialised:
+def _get_client() -> genai.Client:
+    global _client
+    if _client is None:
         api_key = os.environ.get("GEMINI_API_KEY", "")
         if not api_key:
             raise EnvironmentError(
-                "GEMINI_API_KEY is not set. "
-                "Export it before running the pipeline."
+                "GEMINI_API_KEY is not set. Export it before running the pipeline."
             )
-        genai.configure(api_key=api_key)
-        _client_initialised = True
+        _client = genai.Client(api_key=api_key)
+    return _client
 
 
-# ─────────────────────────────────────────────────────────────
-#  Prompt building
-# ─────────────────────────────────────────────────────────────
+def _mime_type(audio_path: str) -> str:
+    ext = os.path.splitext(audio_path)[-1].lower()
+    return _MIME_MAP.get(ext, "audio/mpeg")
 
-def _build_prompt(transcript: dict, features: dict) -> str:
-    """Fill the prompt template with real data."""
-    return EVALUATION_PROMPT_TEMPLATE.format(
-        transcript=transcript.get("full_text", ""),
-        features=json.dumps(features, indent=2),
-        wpm_min=IDEAL_WPM_MIN,
-        wpm_max=IDEAL_WPM_MAX,
+
+def _upload_and_wait(client: genai.Client, audio_path: str):
+    """Upload audio to Gemini Files API and wait until it is ACTIVE."""
+    mime = _mime_type(audio_path)
+    uploaded = client.files.upload(
+        file=audio_path,
+        config={"mime_type": mime, "display_name": "lecture_audio"},
     )
+    # Poll until ACTIVE or FAILED (usually a few seconds)
+    for _ in range(30):
+        f = client.files.get(name=uploaded.name)
+        state = f.state.name if hasattr(f.state, "name") else str(f.state)
+        if state in ("ACTIVE", "FAILED"):
+            if state == "FAILED":
+                raise RuntimeError("Gemini Files API failed to process the audio file.")
+            return f
+        time.sleep(2)
+    raise RuntimeError("Timed out waiting for Gemini Files API to process audio.")
 
 
-# ─────────────────────────────────────────────────────────────
-#  Gemini call
-# ─────────────────────────────────────────────────────────────
-
-def _call_gemini(prompt: str) -> str:
-    """Send a prompt to Gemini and return the raw text response."""
-    _ensure_client()
-    model    = genai.GenerativeModel(GEMINI_MODEL)
-    response = model.generate_content(prompt)
+def _call_gemini(client: genai.Client, file_ref) -> str:
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[
+            types.Part.from_uri(
+                file_uri=file_ref.uri,
+                mime_type=file_ref.mime_type,
+            ),
+            EVALUATION_PROMPT_TEMPLATE,
+        ],
+    )
     return response.text
 
 
 def _parse_response(raw: str) -> dict:
-    """
-    Extract a JSON object from the model response.
-
-    Gemini sometimes wraps JSON in markdown fences; this strips them.
-    """
-    # Remove ```json … ``` fences if present
     cleaned = re.sub(r"```(?:json)?\s*", "", raw).replace("```", "").strip()
-
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as exc:
         raise ValueError(
-            f"Gemini returned non-JSON output.\n"
-            f"Raw response:\n{raw}\n\nParse error: {exc}"
+            f"Gemini returned non-JSON output.\nRaw:\n{raw}\nError: {exc}"
         ) from exc
 
 
-# ─────────────────────────────────────────────────────────────
-#  Validation & fallback
-# ─────────────────────────────────────────────────────────────
-
 def _validate_and_fix(result: dict) -> dict:
-    """
-    Ensure the parsed dict has all required keys and valid score ranges.
-    Missing keys are filled with safe defaults so the pipeline never crashes.
-    """
-    # Scores
     scores = result.get("scores", {})
     for dim, max_val in SCORE_WEIGHTS.items():
-        if dim not in scores or not isinstance(scores[dim], (int, float)):
-            scores[dim] = 0
-        scores[dim] = max(0, min(int(scores[dim]), max_val))
+        if dim not in scores:
+            scores[dim] = {"score": 0, "finding": "", "evidence": []}
+        entry = scores[dim]
+        if isinstance(entry, (int, float)):
+            scores[dim] = {"score": max(0, min(int(entry), max_val)), "finding": "", "evidence": []}
+        else:
+            entry["score"] = max(0, min(int(entry.get("score", 0)), max_val))
+            entry["finding"] = str(entry.get("finding", ""))
+            entry["evidence"] = [str(e) for e in entry.get("evidence", [])]
+
     result["scores"] = scores
+    result["total"] = sum(v["score"] for v in scores.values())
 
-    # Total — recalculate from individual scores to guard against LLM arithmetic
-    result["total"] = sum(scores.values())
+    quant = result.get("quantitative", {})
+    quant.setdefault("wpm_estimate", 0)
+    quant.setdefault("filler_words_heard", 0)
+    quant.setdefault("questions_asked", 0)
+    quant.setdefault("languages_detected", [])
+    quant.setdefault("code_switching_frequency", "none")
+    result["quantitative"] = quant
 
-    # Lists
-    result.setdefault("issues", [])
-    result.setdefault("suggestions", [])
-    result.setdefault("teaching_quality_notes", "")
-
-    # Ensure lists contain strings
-    result["issues"]      = [str(i) for i in result["issues"]]
-    result["suggestions"] = [str(s) for s in result["suggestions"]]
+    result.setdefault("overall_notes", "")
+    result["top_strengths"] = [str(s) for s in result.get("top_strengths", [])]
+    result["priority_improvements"] = [str(s) for s in result.get("priority_improvements", [])]
 
     return result
 
 
-# ─────────────────────────────────────────────────────────────
-#  Public API
-# ─────────────────────────────────────────────────────────────
-
-def evaluate(transcript: dict, features: dict) -> dict:
+def evaluate(audio_path: str) -> dict:
     """
-    Call Gemini once with transcript + features and return a validated
-    evaluation result.
-
-    Parameters
-    ----------
-    transcript : dict
-        Output of audio_processing.process_audio()
-        Keys: "full_text", "segments"
-
-    features : dict
-        Output of features.extract_all()
-        Keys: "audio", "pace", "structure", "interaction", "pedagogy", "summary"
-
-    Returns
-    -------
-    {
-        "scores": {
-            "clarity":     int,   # 0–25
-            "delivery":    int,   # 0–15
-            "pace":        int,   # 0–15
-            "interaction": int,   # 0–20
-            "pedagogy":    int,   # 0–15
-            "summary":     int,   # 0–10
-        },
-        "total":                  int,   # 0–100
-        "issues":                 list[str],
-        "suggestions":            list[str],
-        "teaching_quality_notes": str,
-    }
+    Upload audio_path to Gemini Files API, evaluate the lecture,
+    clean up the uploaded file, and return the structured result.
     """
-    prompt = _build_prompt(transcript, features)
-    raw    = _call_gemini(prompt)
-    parsed = _parse_response(raw)
-    return _validate_and_fix(parsed)
+    client = _get_client()
+    file_ref = None
+    try:
+        file_ref = _upload_and_wait(client, audio_path)
+        raw = _call_gemini(client, file_ref)
+        parsed = _parse_response(raw)
+        return _validate_and_fix(parsed)
+    finally:
+        if file_ref is not None:
+            try:
+                client.files.delete(name=file_ref.name)
+            except Exception:
+                pass

@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.core.security import decode_token
@@ -72,11 +73,25 @@ async def get_school_admin(current=Depends(get_current_user)):
     return user
 
 
-async def get_teacher(current=Depends(get_current_user)):
-    user, role = current
+async def get_teacher(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        payload = decode_token(token)
+        user_id: int = int(payload.get("sub"))
+        role: str = payload.get("role")
+    except (JWTError, TypeError, ValueError):
+        raise CREDENTIALS_EXCEPTION
     if role != "teacher":
         raise HTTPException(status_code=403, detail="Teacher access required")
-    return user
+    result = await db.execute(
+        select(Teacher).options(selectinload(Teacher.school)).where(Teacher.id == user_id)
+    )
+    teacher = result.scalar_one_or_none()
+    if not teacher:
+        raise CREDENTIALS_EXCEPTION
+    return teacher
 
 
 async def get_student(current=Depends(get_current_user)):
