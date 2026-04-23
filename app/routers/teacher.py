@@ -190,6 +190,37 @@ async def upload_recording(
     return result.scalar_one()
 
 
+@router.post("/recordings/{recording_id}/retry", response_model=RecordingWithReport)
+async def retry_recording(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    teacher=Depends(get_teacher),
+):
+    result = await db.execute(
+        select(Recording)
+        .options(selectinload(Recording.report))
+        .where(Recording.id == recording_id, Recording.teacher_id == teacher.id)
+    )
+    recording = result.scalar_one_or_none()
+    if not recording:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    if recording.status != "failed":
+        raise HTTPException(status_code=400, detail="Only failed recordings can be retried")
+
+    recording.status = "pending"
+    recording.processed_at = None
+    await db.commit()
+
+    process_recording.delay(recording.id, recording.cloudinary_url)
+
+    result = await db.execute(
+        select(Recording)
+        .options(selectinload(Recording.report))
+        .where(Recording.id == recording_id)
+    )
+    return result.scalar_one()
+
+
 @router.get("/recordings/{recording_id}/report", response_model=LLMReportOut)
 async def get_report(
     recording_id: int,
