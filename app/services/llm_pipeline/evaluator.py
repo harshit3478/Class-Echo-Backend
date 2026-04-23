@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from .config import EVALUATION_PROMPT_TEMPLATE, GEMINI_MODEL, SCORE_WEIGHTS
+
+logger = logging.getLogger(__name__)
+FALLBACK_MODEL = "gemini-1.5-flash"
 
 _client: genai.Client | None = None
 
@@ -61,17 +66,23 @@ def _upload_and_wait(client: genai.Client, audio_path: str):
 
 
 def _call_gemini(client: genai.Client, file_ref) -> str:
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=[
-            types.Part.from_uri(
-                file_uri=file_ref.uri,
-                mime_type=file_ref.mime_type,
-            ),
-            EVALUATION_PROMPT_TEMPLATE,
-        ],
-    )
-    return response.text
+    for model in [GEMINI_MODEL, FALLBACK_MODEL]:
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=[
+                    types.Part.from_uri(
+                        file_uri=file_ref.uri,
+                        mime_type=file_ref.mime_type,
+                    ),
+                    EVALUATION_PROMPT_TEMPLATE,
+                ],
+            )
+            return response.text
+        except genai_errors.ServerError:
+            if model == FALLBACK_MODEL:
+                raise
+            logger.warning("Model %s unavailable (503), falling back to %s", model, FALLBACK_MODEL)
 
 
 def _parse_response(raw: str) -> dict:

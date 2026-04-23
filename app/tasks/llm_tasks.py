@@ -4,7 +4,7 @@ from celery_worker import celery_app
 from app.services.llm import analyze_recording
 
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=30)
+@celery_app.task(bind=True, max_retries=5)
 def process_recording(self, recording_id: int, cloudinary_url: str):
     """
     Celery task: analyse a recording with the LLM stub and save the report.
@@ -56,4 +56,4 @@ def process_recording(self, recording_id: int, cloudinary_url: str):
                     session.commit()
         except Exception:
             pass
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))

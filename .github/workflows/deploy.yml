@@ -1,0 +1,25 @@
+name: Deploy to GCP
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 104.154.218.1
+          username: harshit
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/backend
+            git pull origin main
+            source ~/backend/venv/bin/activate
+            pip install -r requirements.txt -q
+            alembic upgrade head
+            sudo systemctl restart classecho-api classecho-celery
+            echo "Deploy complete ✓"
